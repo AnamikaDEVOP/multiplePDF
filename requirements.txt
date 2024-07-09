@@ -1,4 +1,5 @@
 langchain
+langchain-community
 torch
 accelerate
 sentence_transformers
