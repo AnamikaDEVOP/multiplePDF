@@ -1,27 +1,35 @@
 import streamlit as st
 from streamlit_chat import message
-from llama_cpp import Llama
 from langchain.chains import ConversationalRetrievalChain
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.llms import LlamaCpp
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import FAISS
 from langchain.memory import ConversationBufferMemory
 from langchain.document_loaders import PyPDFLoader
-from huggingface_hub import hf_hub_download
+from sentence_transformers import SentenceTransformer
+from langchain.llms import HuggingFacePipeline
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import os
 import tempfile
 
+class SentenceTransformerEmbeddings:
+    def __init__(self, model_name):
+        self.model = SentenceTransformer(model_name)
 
+    def embed_documents(self, texts):
+        return self.model.encode(texts, show_progress_bar=True)
+
+    def embed_query(self, text):
+        return self.model.encode(text, show_progress_bar=True)
+
+    def __call__(self, text):
+        return self.model.encode(text, show_progress_bar=True)
 
 @st.cache_resource
 def initialize_session_state():
     if 'history' not in st.session_state:
         st.session_state['history'] = []
-
     if 'generated' not in st.session_state:
         st.session_state['generated'] = ["Hello! Ask me anything about 🤗"]
-
     if 'past' not in st.session_state:
         st.session_state['past'] = ["Hey! 👋"]
 
@@ -53,33 +61,39 @@ def display_chat_history(chain):
                 message(st.session_state["generated"][i], key=str(i), avatar_style="fun-emoji")
 
 def create_conversational_chain(vector_store):
-    # Create llm
-    model_path = hf_hub_download(repo_id="TheBloke/Mistral-7B-Instruct-v0.1-GGUF", filename="mistral-7b-instruct-v0.1.Q4_K_M.gguf")
-    llm = LlamaCpp(
-        streaming = True,
-        model_path=model_path,
-        temperature=0.75,
-        top_p=1, 
-        verbose=True,
-        n_ctx=4096
+    # Create llm using HuggingFacePipeline
+    model_name = "EleutherAI/gpt-neo-125M"  # Using a smaller model for faster response
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name)
+    
+    text_generation_pipeline = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        max_length=512,  # Set max_length for the input
+        max_new_tokens=50,  # Specify max_new_tokens for the generated text
+        temperature=0.7,
+        top_p=0.95,
+        repetition_penalty=1.15
     )
-
+    
+    llm = HuggingFacePipeline(pipeline=text_generation_pipeline)
     
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
-    chain = ConversationalRetrievalChain.from_llm(llm=llm, chain_type='stuff',
-                                                 retriever=vector_store.as_retriever(search_kwargs={"k": 2}),
-                                                 memory=memory)
+    chain = ConversationalRetrievalChain.from_llm(
+        llm=llm, 
+        chain_type='stuff',
+        retriever=vector_store.as_retriever(search_kwargs={"k": 3}),  # Reduced k for faster retrieval
+        memory=memory
+    )
     return chain
 
 def main():
-    # Initialize session state
     initialize_session_state()
-    st.title("Multi-PDF ChatBot using Mistral-7B-Instruct :books:")
-    # Initialize Streamlit
+    st.title("Multi-PDF ChatBot using GPT-2 :books:")
     st.sidebar.title("Document Processing")
     uploaded_files = st.sidebar.file_uploader("Upload files", accept_multiple_files=True)
-
 
     if uploaded_files:
         text = []
@@ -97,12 +111,11 @@ def main():
                 text.extend(loader.load())
                 os.remove(temp_file_path)
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=20)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=3000, chunk_overlap=100)  # Adjusted for performance
         text_chunks = text_splitter.split_documents(text)
 
-        # Create embeddings
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2", 
-                                           model_kwargs={'device': 'cpu'})
+        # Create embeddings using SentenceTransformerEmbeddings
+        embeddings = SentenceTransformerEmbeddings('all-MiniLM-L6-v2')  # Using a smaller embedding model for speed
 
         # Create vector store
         vector_store = FAISS.from_documents(text_chunks, embedding=embeddings)
@@ -110,8 +123,8 @@ def main():
         # Create the chain object
         chain = create_conversational_chain(vector_store)
 
-        
         display_chat_history(chain)
 
 if __name__ == "__main__":
     main()
+
