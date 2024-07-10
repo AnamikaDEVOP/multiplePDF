@@ -16,13 +16,13 @@ class SentenceTransformerEmbeddings:
         self.model = SentenceTransformer(model_name)
 
     def embed_documents(self, texts):
-        return self.model.encode(texts, show_progress_bar=True)
+        return self.model.encode(texts)
 
     def embed_query(self, text):
-        return self.model.encode(text, show_progress_bar=True)
+        return self.model.encode(text)
 
     def __call__(self, text):
-        return self.model.encode(text, show_progress_bar=True)
+        return self.model.encode(text)
 
 @st.cache_resource
 def initialize_session_state():
@@ -62,7 +62,7 @@ def display_chat_history(chain):
 
 def create_conversational_chain(vector_store):
     # Create llm using HuggingFacePipeline
-    model_name = "EleutherAI/gpt-neo-125M"  # Using a smaller model for faster response
+    model_name = "gpt2"  # You can change this to a more suitable model
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(model_name)
     
@@ -70,8 +70,7 @@ def create_conversational_chain(vector_store):
         "text-generation",
         model=model,
         tokenizer=tokenizer,
-        max_length=512,  # Set max_length for the input
-        max_new_tokens=50,  # Specify max_new_tokens for the generated text
+        max_length=1000,
         temperature=0.7,
         top_p=0.95,
         repetition_penalty=1.15
@@ -84,7 +83,7 @@ def create_conversational_chain(vector_store):
     chain = ConversationalRetrievalChain.from_llm(
         llm=llm, 
         chain_type='stuff',
-        retriever=vector_store.as_retriever(search_kwargs={"k": 3}),  # Reduced k for faster retrieval
+        retriever=vector_store.as_retriever(search_kwargs={"k": 2}),
         memory=memory
     )
     return chain
@@ -111,11 +110,11 @@ def main():
                 text.extend(loader.load())
                 os.remove(temp_file_path)
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=3000, chunk_overlap=100)  # Adjusted for performance
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=20)
         text_chunks = text_splitter.split_documents(text)
 
         # Create embeddings using SentenceTransformerEmbeddings
-        embeddings = SentenceTransformerEmbeddings('all-MiniLM-L6-v2')  # Using a smaller embedding model for speed
+        embeddings = SentenceTransformerEmbeddings('all-MiniLM-L6-v2')
 
         # Create vector store
         vector_store = FAISS.from_documents(text_chunks, embedding=embeddings)
@@ -127,4 +126,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
