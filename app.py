@@ -6,7 +6,7 @@ from langchain.vectorstores import FAISS
 from langchain.memory import ConversationBufferMemory
 from langchain.document_loaders import PyPDFLoader
 from sentence_transformers import SentenceTransformer
-from langchain.llms import HuggingFacePipeline
+from langchain_community.llms import HuggingFacePipeline
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import os
 import tempfile
@@ -24,7 +24,7 @@ class SentenceTransformerEmbeddings:
     def __call__(self, text):
         return self.model.encode(text)
 
-@st.cache_resource
+
 def initialize_session_state():
     if 'history' not in st.session_state:
         st.session_state['history'] = []
